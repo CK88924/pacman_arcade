@@ -105,9 +105,12 @@ pacman_arcade/
 可以在 `constants.py` 中調整遊戲參數：
 
 ```python
-TILE_SIZE = 32          # 瓦片大小
-PLAYER_SPEED = 2        # 玩家速度
-GHOST_SPEED = 1.5       # 鬼魂速度
+    TILE_SIZE = 32                       # 單一地圖格子的像素大小
+    SCREEN_WIDTH = 19 * TILE_SIZE        # 螢幕寬度（19 格）
+    SCREEN_HEIGHT = 21 * TILE_SIZE       # 螢幕高度（21 格）
+    PLAYER_SPEED = 2.0                   # 玩家移動速度（每幀位移）
+    GHOST_SPEED = 1.6                    # 鬼魂移動速度，略慢於玩家
+    COLOR_BG = (0, 0, 0)                 # 背景顏色（黑色）
 ```
 
 ## 🎮 遊戲特性與設計
