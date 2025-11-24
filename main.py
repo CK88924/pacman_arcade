@@ -34,12 +34,12 @@ class PacManGame(arcade.Window):
         self.game_over_text = arcade.Text("GAME OVER", SCREEN_WIDTH/2, SCREEN_HEIGHT/2, arcade.color.RED, 30, anchor_x="center")
         self.victory_text = arcade.Text("VICTORY!", SCREEN_WIDTH/2, SCREEN_HEIGHT/2, arcade.color.GREEN, 30, anchor_x="center")
 
+
     def load_map(self):
         base = os.path.dirname(__file__)
         wall_img = os.path.join(base, "assets", "wall.png")
         wall_scale = autoscale(wall_img, TILE_SIZE)
         
-        # Track valid spawn points for ghosts
         empty_positions = []
 
         for r, row in enumerate(self.map_data):
@@ -69,84 +69,69 @@ class PacManGame(arcade.Window):
         # Spawn 4 ghosts at different positions
         colors = ["red", "blue", "pink", "orange"]
         
-        # Create a set of all walkable positions for fast lookup
         walkable_positions = set(empty_positions)
         
-        # Filter valid spawn positions (must have at least one adjacent walkable tile)
         valid_spawn_positions = []
         for x, y in empty_positions:
-            # Check if this position has at least one walkable neighbor
             has_exit = False
             for dx, dy in [(TILE_SIZE, 0), (-TILE_SIZE, 0), (0, TILE_SIZE), (0, -TILE_SIZE)]:
                 neighbor = (x + dx, y + dy)
                 if neighbor in walkable_positions:
                     has_exit = True
                     break
-            
             if has_exit:
                 valid_spawn_positions.append((x, y))
         
         print(f"Found {len(valid_spawn_positions)} valid spawn positions out of {len(empty_positions)}")
         
         if len(valid_spawn_positions) >= 4:
-            # Shuffle to get random positions
             random.shuffle(valid_spawn_positions)
             
-            # Pick positions that are far apart from each other
             chosen_positions = []
             for pos in valid_spawn_positions:
-                # Check if this position is far enough from already chosen positions
                 too_close = False
                 for chosen in chosen_positions:
                     dist = abs(pos[0] - chosen[0]) + abs(pos[1] - chosen[1])
-                    if dist < 5 * TILE_SIZE:  # At least 5 tiles apart
+                    if dist < 5 * TILE_SIZE:
                         too_close = True
                         break
-                
                 if not too_close:
                     chosen_positions.append(pos)
                     if len(chosen_positions) >= 4:
                         break
             
-            # If we couldn't find 4 positions far apart, just use the first 4 valid ones
             if len(chosen_positions) < 4:
                 chosen_positions = valid_spawn_positions[:4]
             
-            # Create ghosts at chosen positions
             for i, color in enumerate(colors):
                 x, y = chosen_positions[i]
                 ghost = Ghost(x, y, color)
-                # Validate and fix initial direction if needed
                 ghost.validate_and_set_direction(self.walls)
                 self.ghosts.append(ghost)
                 print(f"Created {color} ghost at ({x}, {y}), moving ({ghost.change_x}, {ghost.change_y})")
     
+
     def reset_game(self):
         """重置遊戲狀態（不重新創建窗口）"""
-        # Clear all sprite lists
         self.walls.clear()
         self.pellets.clear()
         self.power_pellets.clear()
         self.ghosts.clear()
         self.player_list.clear()
         
-        # Generate new map
         self.map_data = generate_map()
         
-        # Recreate player
         self.player = Player()
         self.player_list.append(self.player)
         
-        # Reload map
         self.load_map()
         
-        # Reset score and state
         self.score = 0
         self.game_state = "PLAYING"
 
+
     def on_key_press(self, key, modifiers):
         if self.game_state != "PLAYING":
-            # Allow restart with R key
             if key == arcade.key.R:
                 self.reset_game()
                 return
@@ -168,49 +153,55 @@ class PacManGame(arcade.Window):
     def on_key_release(self, key, modifiers):
         pass
 
+
     def on_update(self, delta_time):
         if self.game_state != "PLAYING":
             return
 
-        # Update power pellet animations
         self.power_pellets.update()
         
         self.player.update_movement(self.walls)
         
         for ghost in self.ghosts:
-            # Pass player's current direction (from change_x/y which are -1, 0, or 1)
-            ghost.update_ai(self.walls, self.player.center_x, self.player.center_y, 
-                          self.player.change_x, self.player.change_y)
+            ghost.update_ai(
+                self.walls,
+                self.player.center_x,
+                self.player.center_y,
+                self.player.change_x,
+                self.player.change_y
+            )
         
-        # Check ghost collisions (separate loop to avoid modifying list during iteration)
-        for ghost in list(self.ghosts):  # Create a copy of the list
+        # 碰撞判斷
+        for ghost in self.ghosts:
+            # eaten 狀態的鬼不參與碰撞
+            if ghost.state == "eaten":
+                continue
+
             if arcade.check_for_collision(self.player, ghost):
                 if ghost.state == "frightened":
-                    # Eat the ghost!
-                    ghost.remove_from_sprite_lists()
+                    # 玩家吃鬼 → 不刪除，改呼叫 on_eaten()，Ghost 會自己回家重生
+                    ghost.on_eaten()
                     self.score += 200
                 else:
-                    # Ghost caught player
                     self.game_state = "GAME_OVER"
 
-        # Regular pellets
+        # 普通豆子
         hit = arcade.check_for_collision_with_list(self.player, self.pellets)
         for pellet in hit:
             pellet.remove_from_sprite_lists()
             self.score += 10
         
-        # Power pellets
+        # Power Pellets
         power_hit = arcade.check_for_collision_with_list(self.player, self.power_pellets)
         for power in power_hit:
             power.remove_from_sprite_lists()
             self.score += 50
-            # Make all ghosts frightened
             for ghost in self.ghosts:
                 ghost.set_frightened()
             
-        # Check victory
         if len(self.pellets) == 0 and len(self.power_pellets) == 0:
             self.game_state = "VICTORY"
+
 
     def on_draw(self):
         self.clear()
@@ -220,19 +211,24 @@ class PacManGame(arcade.Window):
         self.ghosts.draw()
         self.player_list.draw()
         
-        # Draw Score
         self.score_text.text = f"Score: {self.score}"
         self.score_text.draw()
         
         if self.game_state == "GAME_OVER":
             self.game_over_text.draw()
-            restart_text = arcade.Text("Press R to Restart", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 40, 
-                                      arcade.color.WHITE, 16, anchor_x="center")
+            restart_text = arcade.Text(
+                "Press R to Restart",
+                SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 40,
+                arcade.color.WHITE, 16, anchor_x="center"
+            )
             restart_text.draw()
         elif self.game_state == "VICTORY":
             self.victory_text.draw()
-            restart_text = arcade.Text("Press R to Restart", SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 40, 
-                                      arcade.color.WHITE, 16, anchor_x="center")
+            restart_text = arcade.Text(
+                "Press R to Restart",
+                SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 40,
+                arcade.color.WHITE, 16, anchor_x="center"
+            )
             restart_text.draw()
 
 
