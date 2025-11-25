@@ -1,156 +1,133 @@
-# main.py
 import arcade
-
-# 修正 import 路徑 - 從 models package 中匯入
-from constants import SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_BG, TILE_SIZE 
+from menu import GameMenu
 from models.classic_mode import ClassicMode
 from models.endless_mode import EndlessMode
 from models.wave_mode import WaveMode
-from menu import GameMenu
 
-class PacManGame(arcade.Window):
-    """
-    主遊戲 Window：
-    - MENU 狀態：選擇 Classic / Endless / Wave
-    - PLAYING 狀態：把鍵盤 & update 轉發給當前模式物件
-    - END 狀態：顯示 GAME OVER / VICTORY，按 R 回主選單
-    """
+
+WINDOW_WIDTH = 1280
+WINDOW_HEIGHT = 720
+TITLE = "Pac-Man Arcade"
+
+
+class GameWindow(arcade.Window):
 
     def __init__(self):
-        super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, "Arcade Pac-Man")
-        arcade.set_background_color(COLOR_BG)
+        super().__init__(WINDOW_WIDTH, WINDOW_HEIGHT, TITLE)
 
-        # 狀態機
-        self.state = "MENU"      # "MENU" / "PLAYING" / "END"
-        self.end_reason = None   # "GAME_OVER" / "VICTORY" / None
-
-        # 使用 GameMenu 物件
+        self.state = "menu"  # menu / playing / paused / game_over
         self.menu = GameMenu()
-        
-        # 當前模式物件（ClassicMode / EndlessMode / WaveMode）
-        self.mode = None
 
-        # 鍵盤映射
-        self.key_map = {
-            arcade.key.UP: (0, 1),
-            arcade.key.DOWN: (0, -1),
-            arcade.key.LEFT: (-1, 0),
-            arcade.key.RIGHT: (1, 0),
-        }
+        self.mode = None  # 遊戲模式實例
+        self.score_text = arcade.Text("Score: 0", 10, 600, arcade.color.WHITE, 18)
 
+    # --------------------------------------------------
+    #  遊戲模式切換
+    # --------------------------------------------------
+    def start_mode(self, mode_name):
+        if mode_name == "classic":
+            self.mode = ClassicMode()
+        elif mode_name == "endless":
+            self.mode = EndlessMode()
+        elif mode_name == "wave":
+            self.mode = WaveMode()
 
-    def on_draw(self):
-        arcade.start_render()
+        self.state = "playing"
 
-        if self.state == "MENU":
-            self.menu.draw()
-
-        elif self.state == "PLAYING" and self.mode is not None:
-            self.mode.draw()
-            self._draw_score()
-
-        elif self.state == "END":
-            self._draw_end_screen()
-
-
-    def update(self, delta_time):
-        if self.state == "PLAYING" and self.mode is not None:
-            self.mode.update(delta_time)
-            
-            # 檢查遊戲模式是否結束
-            if self.mode.finished:
-                self.end_reason = self.mode.result
-                self.state = "END"
-
-
+    # --------------------------------------------------
+    #  Keyboard Handling
+    # --------------------------------------------------
     def on_key_press(self, key, modifiers):
-        
-        if self.state == "MENU":
-            mode_name = self.menu.handle_input(key)
-            
-            if mode_name:
-                # 取得選定的模式類別
-                if mode_name == "classic":
-                    ModeClass = ClassicMode
-                elif mode_name == "endless":
-                    ModeClass = EndlessMode
-                elif mode_name == "wave":
-                    ModeClass = WaveMode
-                else:
-                    return
+        if self.state == "menu":
+            result = self.menu.handle_input(key)
+            if result:
+                self.start_mode(result)
+            return
 
-                # 實例化並啟動遊戲
-                self.mode = ModeClass()
-                self.state = "PLAYING"
-                
-        elif self.state == "PLAYING" and self.mode is not None:
-            
-            # 玩家移動控制
-            if key in self.key_map:
-                dx, dy = self.key_map[key]
-                self.mode.player.next_change_x = dx
-                self.mode.player.next_change_y = dy
-                
-        elif self.state == "END":
+        # 遊戲中
+        if self.state == "playing":
+            if key == arcade.key.ESCAPE:
+                self.state = "paused"
+                return
+            if self.mode:
+                self.mode.on_key_press(key, modifiers)
+
+        elif self.state == "paused":
+            if key == arcade.key.ESCAPE:
+                self.state = "playing"
+
+        elif self.state == "game_over":
             if key == arcade.key.R:
-                # 重設狀態回主選單
-                self.state = "MENU"
-                self.mode = None
-                self.end_reason = None
-                self.menu.index = 0
+                self.state = "menu"
 
+    # --------------------------------------------------
+    #  Update Loop
+    # --------------------------------------------------
+    def on_update(self, delta_time):
+        if self.state != "playing" or not self.mode:
+            return
 
-    def _draw_score(self):
-        """繪製分數和 Wave 數"""
+        self.mode.update(delta_time)
+
+        # 更新分數
+        self.score_text.value = f"Score: {self.mode.score}"
+
+        # 遊戲結束/勝利
+        if self.mode.finished:
+            self.state = "game_over"
+
+    # --------------------------------------------------
+    #  Render
+    # --------------------------------------------------
+    def on_draw(self):
+        self.clear()
+
+        # ---------------- MENU ----------------
+        if self.state == "menu":
+            self.menu.draw()
+            return
+
+        # ---------------- GAME ----------------
         if self.mode:
+            self.mode.draw()
+            self.score_text.draw()
+
+        # ---------------- PAUSED ----------------
+        if self.state == "paused":
             arcade.draw_text(
-                f"SCORE: {self.mode.score}",
-                10, SCREEN_HEIGHT - 20,
-                arcade.color.WHITE, 14
+                "PAUSED\nESC 回到遊戲",
+                WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2,
+                arcade.color.YELLOW, 26,
+                anchor_x="center", anchor_y="center"
             )
-            # 繪製 Wave 數 (WaveMode 專用)
-            if hasattr(self.mode, 'wave'):
-                arcade.draw_text(
-                    f"WAVE: {self.mode.wave}",
-                    SCREEN_WIDTH - 10, SCREEN_HEIGHT - 20,
-                    arcade.color.WHITE, 14, anchor_x="right"
-                )
+
+        # ---------------- GAME OVER ----------------
+        if self.state == "game_over":
+            result = self.mode.result or "GAME OVER"
+            arcade.draw_text(
+                result,
+                WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 40,
+                arcade.color.YELLOW, 32,
+                anchor_x="center"
+            )
+            arcade.draw_text(
+                f"Score: {self.mode.score}",
+                WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 10,
+                arcade.color.WHITE, 22,
+                anchor_x="center"
+            )
+            arcade.draw_text(
+                "按 R 回主選單",
+                WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 60,
+                arcade.color.GRAY, 18,
+                anchor_x="center"
+            )
 
 
-    def _draw_end_screen(self):
-        """繪製遊戲結束畫面"""
-        if self.end_reason == "GAME_OVER":
-            text = "GAME OVER"
-            color = arcade.color.RED
-        elif self.end_reason == "VICTORY":
-            text = "VICTORY!"
-            color = arcade.color.GREEN
-        else:
-            text = "GAME END"
-            color = arcade.color.WHITE
-
-        arcade.draw_text(
-            text,
-            SCREEN_WIDTH / 2,
-            SCREEN_HEIGHT / 2 + 20,
-            color,
-            28,
-            anchor_x="center",
-        )
-        arcade.draw_text(
-            "Press R to return to Menu",
-            SCREEN_WIDTH / 2,
-            SCREEN_HEIGHT / 2 - 20,
-            arcade.color.WHITE,
-            16,
-            anchor_x="center",
-        )
-
-        
-# 執行遊戲
 def main():
-    window = PacManGame()
+    window = GameWindow()
     arcade.run()
+
 
 if __name__ == "__main__":
     main()
